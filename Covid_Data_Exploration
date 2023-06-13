@@ -1,0 +1,116 @@
+select *
+from CovidDeaths
+
+--Selecting data that we are going to use
+Select location, date, total_cases, new_cases, total_deaths, population
+from CovidDeaths
+order by 3,4
+
+-- looking at the total cases vs total deaths of US
+Select Location, date, total_cases, total_deaths,
+cast(total_deaths as float)/cast(total_cases as float) *100 as DeathPercentage
+from CovidDeaths
+where location like '%United Kingdom%'
+and continent is not null
+order by 1,2
+
+-- Looking at the total cases vs population
+Select Location, date, total_cases, population,
+cast(total_cases as float)/cast(population as float) *100 as CasesPercentage
+from CovidDeaths
+where location like '%United Kingdom%'
+and continent is not null
+order by 1,2
+
+-- what country has highest infection rate vs population
+Select location, max(total_cases) as HighestInfectionRate,
+(cast(total_cases as float)/(cast(population as float))) *100 as PercentPopulationIcfected
+from CovidDeaths
+where continent is not null
+group by location, population, total_cases
+order by PercentPopulationIcfected -- Getting a Divide by zero error so skipping this bit for now
+
+-- Showing countries with the highest death count per population
+Select Location, MAX(cast(total_deaths as int)) as TotalDeathCount
+from CovidDeaths
+where continent is not null
+group by location
+order by TotalDeathCount desc
+-- Showing the continents with highest deathcount
+Select continent, MAX(cast(total_deaths as int)) as TotalDeathCountContinent
+from CovidDeaths
+where continent is not null
+group by continent 
+order by TotalDeathCountContinent desc
+
+-- Global numbers
+Select sum(cast(new_cases as float)) as TotalCases, sum(cast(new_deaths as float)) as TotalDeaths,
+sum(cast(new_deaths as float))/Nullif(sum(cast(new_cases as float)),0)*100 as DeathPercentage
+from CovidDeaths
+where continent is Not Null
+order by 1,2
+
+-- Joining the two tables together
+Select dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations,
+SUM(CONVERT(int,vac.new_vaccinations)) 
+OVER 
+(Partition by dea.Location Order by dea.location, dea.Date) as RollingPeopleVaccinated
+From CovidDeaths dea
+Join CovidVaccinations vac
+	On dea.location = vac.location
+	and dea.date = vac.date
+where dea.continent is not null 
+order by 2,3
+
+--Using the CTE
+With PopvsVac (Continent, Location, Date, Population, New_Vaccinations, RollingPeopleVaccinated)
+as
+(
+Select dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
+, SUM(CONVERT(int,vac.new_vaccinations))
+OVER 
+(Partition by dea.Location Order by dea.location, dea.Date) as RollingPeopleVaccinated
+From CovidDeaths dea
+Join CovidVaccinations vac
+	On dea.location = vac.location
+	and dea.date = vac.date
+where dea.continent is not null 
+)
+Select *, (RollingPeopleVaccinated/Nullif(cast(Population as float),0)*100)
+From PopvsVac
+
+
+--Using Temp Table to perform calculation on Partition By in previous query 
+
+DROP Table if exists #PercentPopulationVaccinated
+Create Table #PercentPopulationVaccinated
+(
+Continent nvarchar(255),
+Location nvarchar(255),
+Date nvarchar(255),
+Population float,
+New_vaccinations float,
+RollingPeopleVaccinated float
+)
+
+Insert into #PercentPopulationVaccinated
+Select dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
+, SUM(CONVERT(float,vac.new_vaccinations))
+OVER 
+(Partition by dea.Location Order by dea.location, dea.Date) as RollingPeopleVaccinated
+From CovidDeaths dea
+Join CovidVaccinations vac
+	On dea.location = vac.location
+	and dea.date = vac.date
+Select *, (RollingPeopleVaccinated/Nullif(cast(Population as float),0)*100)
+From #PercentPopulationVaccinated
+
+-- Creating View to store data for later visualizations
+Create View PercentPopulationVaccinated as
+Select dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
+, SUM(CONVERT(float,vac.new_vaccinations)) OVER (Partition by dea.Location Order by dea.location, dea.Date) as RollingPeopleVaccinated
+From CovidDeaths dea
+Join CovidVaccinations vac
+	On dea.location = vac.location
+	and dea.date = vac.date
+where dea.continent is not null
