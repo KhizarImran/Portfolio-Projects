@@ -1,0 +1,195 @@
+select * 
+from NashvilleHousing
+
+-- Standardize Date format 
+ALTER TABLE NashvilleHousing
+Add SaleDateConverted Date; -- This adds another column of saledateconverted
+
+Update NashvilleHousing
+SET SaleDateConverted = CONVERT(Date,SaleDate) -- This updates the new column with new dates
+
+Select SaleDateConverted, CONVERT(Date,SaleDate)
+from NashvilleHousing -- To view if the edits have been successfull
+
+ ---------------------------------------------------------------
+
+-- Populate Property Address data
+Select *
+from NashvilleHousing
+--where PropertyAddress is NULL
+order by ParcelID
+-- in the data we can see name ParcelDs for same addresses 
+-- we can then say if the ParcelIDs are the same for a known address 
+-- the unknown address will be the same 
+
+Select a.ParcelID, a.PropertyAddress, b.ParcelID, b.PropertyAddress, 
+ISNULL(a.PropertyAddress, b.PropertyAddress) 
+-- ISNULL function replaces the first in the bracket with the second
+from NashvilleHousing a
+join NashvilleHousing b
+	on a.ParcelID = b.ParcelID
+	and a.UniqueID <> b.UniqueID
+where a.PropertyAddress is null -- To see a new column with possible replacement address
+
+Update a
+SET PropertyAddress = ISNULL(a.PropertyAddress, b.PropertyAddress)
+from NashvilleHousing a
+join NashvilleHousing b
+	on a.ParcelID = b.ParcelID
+	and a.UniqueID <> b.UniqueID -- Updates the Null values in a to knew known addresses
+
+Select a.ParcelID, a.PropertyAddress, b.ParcelID, b.PropertyAddress 
+from NashvilleHousing a
+join NashvilleHousing b
+	on a.ParcelID = b.ParcelID
+	and a.UniqueID <> b.UniqueID --Checking to see if updates made are done
+
+---------------------------------------------------------------
+
+-- Breaking out Address into Individual Columns (Address, City, State)
+
+Select PropertyAddress
+from NashvilleHousing
+
+Select 
+SUBSTRING(PropertyAddress,1, CharIndex (',', PropertyAddress)-1) as Address,
+SUBSTRING(PropertyAddress, CHARINDEX(',', PropertyAddress) + 1 , LEN(PropertyAddress)) as Address
+from NashvilleHousing 
+-- CharIndex looks for a certain substring in the data and returns a position
+-- However the selected string is added in the output unless -1 added 
+-- Substring extracts some characters from a string
+
+ALTER TABLE NashvilleHousing
+Add PropertySplitAddress Nvarchar(255);
+
+Update NashvilleHousing
+SET PropertySplitAddress = SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress) -1 )
+--Adding a knew column for the split address
+
+ALTER TABLE NashvilleHousing
+Add PropertySplitCity Nvarchar(255);
+
+Update NashvilleHousing
+SET PropertySplitCity = SUBSTRING(PropertyAddress, CHARINDEX(',', PropertyAddress) + 1 , LEN(PropertyAddress))
+-- Adding a knew column for the split city 
+
+Select OwnerAddress 
+from NashvilleHousing
+
+Select 
+PARSENAME(REPLACE(OwnerAddress,',','.'), 3)
+, PARSENAME(REPLACE(OwnerAddress,',','.'), 2)
+, PARSENAME(REPLACE(OwnerAddress,',','.'), 1) --Parsname looks for '.' and cuts there
+from NashvilleHousing --Parsname does things in the opposite direction
+
+ALTER TABLE NashvilleHousing
+Add OwnerSplitAddress nvarchar(255);
+
+Update NashvilleHousing
+SET OwnerSplitAddress = PARSENAME(REPLACE(OwnerAddress,',','.'), 3)
+
+ALTER TABLE NashvilleHousing
+Add OwnerSplitCity nvarchar(255);
+
+Update NashvilleHousing
+SET OwnerSplitCity = PARSENAME(REPLACE(OwnerAddress,',','.'), 2)
+
+ALTER TABLE NashvilleHousing
+Add OwnerSplitState nvarchar(255);
+
+Update NashvilleHousing
+SET OwnerSplitState = PARSENAME(REPLACE(OwnerAddress,',','.'), 1)
+
+---------------------------------------------------------------
+
+-- Change Y and N to Yes and No in "Sold as Vacant" field
+
+
+Select Distinct(SoldAsVacant), Count(SoldAsVacant)
+From NashvilleHousing
+Group by SoldAsVacant
+order by 2 -- Looking at the amount of Yes vs No of the SoldAsVacant data
+
+Select SoldAsVacant,
+Case 
+when SoldAsVacant = 0 Then 'No'
+when	 SoldAsVacant = 1 Then 'Yes'
+Else Cast(SoldAsVacant as varchar(10))
+End as SoldAsVacantString
+from NashvilleHousing --Byte data conversion to string 
+-- Updating it in the same column did not work 
+-- Because the column is a byte data type and im converting into string
+
+
+ALTER TABLE NashvilleHousing
+Add SoldAsVacantString nvarchar(255); --To solve error another column was created 
+
+Update NashvilleHousing
+Set SoldAsVacantString = Case 
+when SoldAsVacant = 0 Then 'No'
+when	 SoldAsVacant = 1 Then 'Yes'
+Else Cast(SoldAsVacant as varchar(255))
+End -- Column updated with yes and no
+
+Select SoldAsVacantString, Count(SoldAsVacantString)
+from NashvilleHousing
+group by SoldAsVacantString -- Checking how many Yes vs No
+
+
+---------------------------------------------------------------
+-- Remove Duplicates
+
+WITH RowNumCTE AS(
+Select *,
+	ROW_NUMBER() OVER (
+	PARTITION BY ParcelID,
+				 PropertyAddress,
+				 SalePrice,
+				 SaleDate,
+				 LegalReference
+				 ORDER BY
+					UniqueID
+					) row_num
+
+From NashvilleHousing
+--order by ParcelID
+)
+Delete -- This code deletes all the duplicates
+From RowNumCTE
+Where row_num > 1
+--Order by PropertyAddress
+
+
+WITH RowNumCTE AS(
+Select *,
+	ROW_NUMBER() OVER (
+	PARTITION BY ParcelID,
+				 PropertyAddress,
+				 SalePrice,
+				 SaleDate,
+				 LegalReference
+				 ORDER BY
+					UniqueID
+					) row_num
+
+From NashvilleHousing
+--order by ParcelID
+)
+Select*
+From RowNumCTE
+Where row_num > 1
+Order by PropertyAddress -- This views to see if they are deleted, correct if empty table returned
+
+
+-------------------------------------
+
+-- Delete Unused Columns
+-- Disclaimer : Do not do this to raw data
+
+
+Select *
+From NashvilleHousing
+
+
+ALTER TABLE NashvilleHousing
+DROP COLUMN OwnerAddress, TaxDistrict, PropertyAddress, SaleDate
